@@ -1,0 +1,102 @@
+.hero {
+  padding-top: 180px;
+  padding-bottom: 120px;
+
+
+  background:
+    linear-gradient(rgba(255,255,255,0.92), rgba(255,255,255,0.92)),
+    url("../assets/images/alumni-bg.jpg");
+
+  background-size: cover;
+  background-position: center;
+}
+
+
+.hero-container {
+  max-width: 1200px;
+  margin: auto;
+  padding: 0 20px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 60px;
+}
+
+
+.hero-left {
+  flex: 1;
+}
+
+.hero-left h1 {
+  font-size: 3rem;
+  line-height: 1.2;
+  margin-bottom: 20px;
+  font-weight: 700;
+}
+
+.hero-left h1 span {
+  color: #065f46;
+}
+
+.hero-left p {
+  font-size: 1.05rem;
+  color: #4b5563;
+  margin-bottom: 30px;
+  max-width: 520px;
+}
+
+
+.store-buttons {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.store-buttons img {
+  height: 48px;
+  cursor: pointer;
+  transition: 0.25s ease;
+}
+
+.store-buttons img:hover {
+  transform: translateY(-3px);
+}
+
+
+.hero-right {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.hero-right img {
+  width: 100%;
+  max-width: 560px;
+}
+
+/* RESPONSIVE */
+@media (max-width: 900px) {
+
+  .hero-container {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .hero-left h1 {
+    font-size: 2.2rem;
+  }
+
+  .hero-left p {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .store-buttons {
+    justify-content: center;
+  }
+
+  .hero-right {
+    display: none;
+  }
+}

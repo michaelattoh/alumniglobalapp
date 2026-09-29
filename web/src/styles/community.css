@@ -1,0 +1,159 @@
+.community-section {
+  padding: 100px 20px;
+  background: white;
+  text-align: center;
+}
+
+.community-container {
+  max-width: 1100px;
+  margin: auto;
+}
+
+/* Gradient title */
+.gradient-text {
+  background: linear-gradient(90deg,#7c3aed,#16a34a);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.community-title {
+  font-size: 36px;
+  margin-bottom: 12px;
+}
+
+.community-subtitle {
+  color: #666;
+  margin-bottom: 50px;
+}
+
+/* Avatar */
+.avatars-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.avatar {
+  border-radius: 50%;
+  overflow: hidden;
+  transform: scale(0);
+  opacity: 0;
+  margin-left: -36px;
+}
+
+.avatar:first-child {
+  margin-left: 0;
+}
+
+
+.center-avatar { width: 160px; height: 160px; }
+
+.avatar-1 { width: 130px; height: 130px; }
+.avatar-2 { width: 110px; height: 110px; }
+.avatar-3 { width: 95px; height: 95px; }
+.avatar-4 { width: 80px; height: 80px; }
+.avatar-5 { width: 70px; height: 70px; }
+.avatar-6 { width: 60px; height: 60px; }
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar.show {
+  animation: popIn 0.35s ease forwards;
+}
+
+@keyframes popIn {
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.join-btn {
+  display: inline-block;
+  margin-top: 40px;
+  padding: 12px 26px;
+  background: #6d28d9;
+  color: white;
+  border-radius: 999px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+/* Popup overlay */
+.popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999; 
+}
+
+.popup-box {
+  background: #fff;
+  padding: 30px;
+  border-radius: 16px;
+  width: 320px;
+  text-align: center;
+  position: relative;
+}
+
+.popup-box::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 18px;
+  background: linear-gradient(270deg,#7c3aed,#16a34a,#7c3aed);
+  background-size: 400% 400%;
+  animation: borderGlow 6s linear infinite;
+  z-index: -1;
+}
+
+@keyframes borderGlow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 100% 50%; }
+}
+
+.popup-input {
+  width: 100%;
+  padding: 10px;
+  margin: 15px 0;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #f3f4f6;
+  color: #000;
+}
+
+.popup-send {
+  background: #6d28d9;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.popup-send:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.popup-close {
+  margin-top: 15px;
+  background: none;
+  border: none;
+  color: #555;
+  cursor: pointer;
+}
+
+.popup-error {
+  color: #dc2626;
+  font-size: 13px;
+  margin-top: -8px;
+  margin-bottom: 10px;
+}

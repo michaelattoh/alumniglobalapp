@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class CVPreviewScreen extends StatelessWidget {
   final File file;
@@ -15,8 +16,7 @@ class CVPreviewScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text('CV Preview',
-            style: TextStyle(color: Colors.black)),
+        title: const Text('CV Preview', style: TextStyle(color: Colors.black)),
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: Padding(
@@ -52,17 +52,27 @@ class CVPreviewScreen extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 20),
                   Row(
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: () {},
+                          onPressed: () async {
+                            final ok = await launchUrl(
+                              Uri.file(file.path),
+                              mode: LaunchMode.externalApplication,
+                            );
+                            if (!context.mounted || ok) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Could not open CV preview'),
+                              ),
+                            );
+                          },
                           icon: const Icon(Icons.visibility_rounded),
                           label: const Text('View'),
                         ),

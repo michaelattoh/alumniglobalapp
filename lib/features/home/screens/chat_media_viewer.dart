@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:alumni_global_app/core/services/home_api_service.dart';
 
 class ChatMediaViewer extends StatefulWidget {
   final List<Map<String, String>> media;
@@ -29,8 +30,13 @@ class _ChatMediaViewerState extends State<ChatMediaViewer> {
   void _loadMedia() {
     videoController?.dispose();
     final item = widget.media[index];
-    if (item['type'] == 'video') {
-      videoController = VideoPlayerController.network(item['url']!)
+    final type = (item['type'] ?? '').toLowerCase();
+    if (type.startsWith('video')) {
+      final url = HomeApiService.normalizeMediaUrl(item['url']);
+      if (url == null || url.isEmpty) {
+        return;
+      }
+      videoController = VideoPlayerController.networkUrl(Uri.parse(url))
         ..initialize().then((_) {
           setState(() {});
           videoController!.play();
@@ -65,6 +71,7 @@ class _ChatMediaViewerState extends State<ChatMediaViewer> {
   @override
   Widget build(BuildContext context) {
     final item = widget.media[index];
+    final normalizedUrl = HomeApiService.normalizeMediaUrl(item['url']);
 
     return GestureDetector(
       onVerticalDragEnd: (details) {
@@ -77,16 +84,33 @@ class _ChatMediaViewerState extends State<ChatMediaViewer> {
         body: Stack(
           children: [
             Center(
-              child: item['type'] == 'image'
-                  ? Image.network(item['url']!, fit: BoxFit.contain)
+              child:
+                  ((item['type'] ?? 'image').toLowerCase().startsWith(
+                        'image',
+                      ) ||
+                      (item['type'] ?? '').isEmpty)
+                  ? normalizedUrl == null || normalizedUrl.isEmpty
+                        ? const Icon(
+                            Icons.broken_image_outlined,
+                            color: Colors.white70,
+                            size: 56,
+                          )
+                        : Image.network(
+                            normalizedUrl,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.broken_image_outlined,
+                              color: Colors.white70,
+                              size: 56,
+                            ),
+                          )
                   : videoController != null &&
-                          videoController!.value.isInitialized
-                      ? AspectRatio(
-                          aspectRatio:
-                              videoController!.value.aspectRatio,
-                          child: VideoPlayer(videoController!),
-                        )
-                      : const CircularProgressIndicator(),
+                        videoController!.value.isInitialized
+                  ? AspectRatio(
+                      aspectRatio: videoController!.value.aspectRatio,
+                      child: VideoPlayer(videoController!),
+                    )
+                  : const CircularProgressIndicator(),
             ),
 
             // Top controls
@@ -98,20 +122,23 @@ class _ChatMediaViewerState extends State<ChatMediaViewer> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   IconButton(
-                    icon:
-                        const Icon(Icons.close, color: Colors.white),
+                    icon: const Icon(Icons.close, color: Colors.white),
                     onPressed: () => Navigator.pop(context),
                   ),
                   Row(
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.chevron_left,
-                            color: Colors.white),
+                        icon: const Icon(
+                          Icons.chevron_left,
+                          color: Colors.white,
+                        ),
                         onPressed: _prev,
                       ),
                       IconButton(
-                        icon: const Icon(Icons.chevron_right,
-                            color: Colors.white),
+                        icon: const Icon(
+                          Icons.chevron_right,
+                          color: Colors.white,
+                        ),
                         onPressed: _next,
                       ),
                     ],

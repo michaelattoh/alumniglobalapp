@@ -1,6 +1,9 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import './models/user_type.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:alumni_global_app/core/config/api_config.dart';
+import 'package:alumni_global_app/core/services/auth_session.dart';
 
 class RoleDetailsScreen extends StatefulWidget {
   const RoleDetailsScreen({super.key});
@@ -10,6 +13,17 @@ class RoleDetailsScreen extends StatefulWidget {
 }
 
 class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
+  String? _token;
+  bool _didInitArgs = false;
+  UserType _userType = UserType.alumni;
+  Map<String, dynamic>? _user;
+
+  // institutions from backend
+  List<Map<String, dynamic>> _institutions = [];
+  String? _codeError;
+  String? _selectedInstitutionName;
+  int? _selectedInstitutionId;
+
   // Alumni controllers
   final TextEditingController _alumniSchoolController = TextEditingController();
   final TextEditingController _studentIdController = TextEditingController();
@@ -19,9 +33,7 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
   final TextEditingController _schoolIdController = TextEditingController();
 
   // Registered schools for demo
-  final List<String> _registeredSchools = [
-    'Alpha Beta College',
-  ];
+
   List<String> _suggestions = [];
 
   // Validation errors
@@ -39,43 +51,298 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
     super.dispose();
   }
 
-  String _generateSchoolId(String name) {
-    if (name.trim().isEmpty) return '';
-    final words = name.trim().split(RegExp(r'\s+'));
-    final prefix = words.map((w) => w[0].toUpperCase()).join();
-    final randomNum = Random().nextInt(90000) + 10000;
-    return '$prefix-$randomNum';
+  Future<void> _searchInstitutions(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) {
+      setState(() {
+        _institutions = [];
+        _suggestions = [];
+      });
+      return;
+    }
+
+    try {
+      final res = await http.get(
+        Uri.parse(
+          '${ApiConfig.baseUrl}/api/institutions?search=${Uri.encodeComponent(q)}',
+        ),
+        headers: const {'Accept': 'application/json'},
+      );
+
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        final List data = body['data'] ?? [];
+
+        final names = data.map((e) => e['name'].toString()).toList();
+
+        setState(() {
+          _institutions = data.cast<Map<String, dynamic>>();
+          _suggestions = names;
+          _alumniSchoolError = null;
+        });
+      } else {
+        setState(() => _suggestions = []);
+      }
+    } catch (_) {
+      setState(() => _suggestions = []);
+    }
   }
 
-  void _onContinuePressed(bool isAlumni) {
+  Future<bool> _validateInviteCode(String code) async {
+    final c = code.trim();
+    if (c.isEmpty) return false;
+
+    try {
+      final res = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/invitations/validate'),
+        headers: const {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'code': c}),
+      );
+
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        final inst = body['institution'];
+
+        setState(() {
+          _codeError = null;
+          _selectedInstitutionName = inst?['name']?.toString();
+        });
+
+        // Optional: if user typed a school name, ensure it matches
+        final typedSchool = _alumniSchoolController.text.trim();
+        if (typedSchool.isNotEmpty &&
+            _selectedInstitutionName != null &&
+            typedSchool.toLowerCase() !=
+                _selectedInstitutionName!.toLowerCase()) {
+          setState(() {
+            _codeError =
+                'Code is for $_selectedInstitutionName, not "$typedSchool".';
+          });
+          return false;
+        }
+
+        return true;
+      }
+
+      final body = jsonDecode(res.body);
+      setState(() {
+        _selectedInstitutionName = null;
+        _codeError = body['message']?.toString() ?? 'Invalid code';
+      });
+
+      return false;
+    } catch (_) {
+      setState(() {
+        _selectedInstitutionName = null;
+        _codeError = 'Network error';
+      });
+      return false;
+    }
+  }
+
+  Map<String, dynamic>? _findInstitutionByName(String name) {
+    final lower = name.trim().toLowerCase();
+    for (final inst in _institutions) {
+      if ((inst['name']?.toString().toLowerCase() ?? '') == lower) {
+        return inst;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _generateStudentId() async {
+    if (_token == null || _token!.isEmpty || _selectedInstitutionId == null)
+      return;
+    try {
+      final res = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/student-ids/generate'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_token',
+        },
+        body: jsonEncode({'institution_id': _selectedInstitutionId}),
+      );
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        final code = body['code']?.toString() ?? '';
+        setState(() {
+          _studentIdController.text = code;
+          _alumniStudentIdError = null;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _requestStudentId({
+    required String fullName,
+    required String email,
+  }) async {
+    if (_token == null || _token!.isEmpty || _selectedInstitutionId == null)
+      return;
+    await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/api/student-ids/request'),
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_token',
+      },
+      body: jsonEncode({
+        'institution_id': _selectedInstitutionId,
+        'full_name': fullName,
+        'email': email,
+      }),
+    );
+  }
+
+  Future<void> _registerSchool({required bool navigateAfter}) async {
+    if (_token == null || _token!.isEmpty) return;
+    final name = _schoolNameController.text.trim();
+    if (name.isEmpty) {
+      setState(() => _schoolNameError = 'Please enter your school name.');
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final res = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/institutions/register'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_token',
+        },
+        body: jsonEncode({'school_name': name}),
+      );
+      Navigator.of(context).pop();
+      if (res.statusCode == 201 || res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        setState(() {
+          _schoolIdController.text = body['school_id']?.toString() ?? '';
+          _schoolIdError = null;
+        });
+        if (navigateAfter) {
+          Navigator.of(context).pushReplacementNamed('/home');
+        }
+        return;
+      }
+      final body = jsonDecode(res.body);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(body['message']?.toString() ?? 'Failed')),
+      );
+    } catch (e) {
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Network error: $e')));
+    }
+  }
+
+  Future<void> _onContinuePressed(bool isAlumni) async {
+    // reset errors
     setState(() {
       _alumniSchoolError = null;
       _alumniStudentIdError = null;
       _schoolNameError = null;
       _schoolIdError = null;
+      _codeError = null;
+      _selectedInstitutionName = null;
+    });
 
-      if (isAlumni) {
-        if (_alumniSchoolController.text.trim().isEmpty) {
-          _alumniSchoolError = 'Please enter or select your school.';
-        }
-        if (_studentIdController.text.trim().isEmpty) {
-          _alumniStudentIdError = 'Please enter your student ID.';
-        }
-        if (_alumniSchoolError == null && _alumniStudentIdError == null) {
-          Navigator.of(context).pushReplacementNamed('/home');
-        }
-      } else {
-        if (_schoolNameController.text.trim().isEmpty) {
-          _schoolNameError = 'Please enter your school name.';
-        }
-        if (_schoolIdController.text.trim().isEmpty) {
-          _schoolIdError = 'Please generate a school ID.';
-        }
-        if (_schoolNameError == null && _schoolIdError == null) {
-          Navigator.of(context).pushReplacementNamed('/home');
+    if (isAlumni) {
+      if (_alumniSchoolController.text.trim().isEmpty) {
+        setState(
+          () => _alumniSchoolError = 'Please enter or select your school.',
+        );
+        return;
+      }
+      if (_selectedInstitutionId == null) {
+        final inst = _findInstitutionByName(_alumniSchoolController.text);
+        _selectedInstitutionId = (inst?['id'] as num?)?.toInt();
+        if (_selectedInstitutionId == null) {
+          setState(
+            () => _alumniSchoolError =
+                'Please select a valid school from the list.',
+          );
+          return;
         }
       }
-    });
+      if (_studentIdController.text.trim().isEmpty) {
+        setState(
+          () => _alumniStudentIdError = 'Please enter the verification code.',
+        );
+        return;
+      }
+
+      if (_token == null || _token!.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Missing token. Please login again.')),
+        );
+        return;
+      }
+
+      // 1) validate code
+      final isValid = await _validateInviteCode(_studentIdController.text);
+      if (!isValid) return;
+
+      // 2) attach institution
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+      try {
+        final res = await http.post(
+          Uri.parse('${ApiConfig.baseUrl}/api/me/attach-institution'),
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $_token',
+          },
+          body: jsonEncode({'code': _studentIdController.text.trim()}),
+        );
+
+        Navigator.of(context).pop(); // close loader
+
+        if (res.statusCode == 200) {
+          Navigator.of(context).pushReplacementNamed('/home');
+          return;
+        }
+
+        final body = jsonDecode(res.body);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(body['message']?.toString() ?? 'Failed')),
+        );
+      } catch (e) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Network error: $e')));
+      }
+
+      return;
+    }
+
+    // School verification
+    if (_schoolNameController.text.trim().isEmpty) {
+      setState(() => _schoolNameError = 'Please enter your school name.');
+      return;
+    }
+    if (_schoolIdController.text.trim().isEmpty) {
+      await _registerSchool(navigateAfter: true);
+      return;
+    }
+
+    Navigator.of(context).pushReplacementNamed('/home');
   }
 
   @override
@@ -83,8 +350,34 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
     final theme = Theme.of(context);
 
     final args = ModalRoute.of(context)?.settings.arguments;
-    final userType = args is UserType ? args : UserType.alumni;
-    final isAlumni = userType == UserType.alumni;
+    print('ROLE DETAILS args: $args');
+
+    if (!_didInitArgs) {
+      _didInitArgs = true;
+
+      if (args is Map) {
+        _userType = args['type'] is UserType ? args['type'] : UserType.alumni;
+        _token = args['token']?.toString();
+        final rawUser = args['user'];
+        if (rawUser is Map<String, dynamic>) {
+          _user = rawUser;
+        }
+      } else if (args is UserType) {
+        _userType = args;
+      }
+
+      print('ROLE DETAILS token: $_token');
+      if (_token == null || _token!.isEmpty) {
+        AuthSession.getToken().then((savedToken) {
+          if (!mounted) return;
+          if (savedToken != null && savedToken.isNotEmpty) {
+            setState(() => _token = savedToken);
+          }
+        });
+      }
+    }
+
+    final isAlumni = _userType == UserType.alumni;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F7),
@@ -119,7 +412,7 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () => _onContinuePressed(isAlumni),
+                      onPressed: () async => await _onContinuePressed(isAlumni),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
@@ -149,21 +442,14 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
           controller: _alumniSchoolController,
           onChanged: (value) {
             setState(() {
-              if (value.trim().isEmpty) {
-                _suggestions = [];
-              } else {
-                _suggestions = _registeredSchools
-                    .where((school) =>
-                        school.toLowerCase().contains(value.toLowerCase()))
-                    .toList();
-              }
               _alumniSchoolError = null;
+              _selectedInstitutionId = null;
             });
+            _searchInstitutions(value);
           },
           decoration: _inputDecoration(
             hintText: 'Search or enter your school name',
-            suffixIcon:
-                const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
+            suffixIcon: const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
           ),
         ),
         AnimatedSwitcher(
@@ -191,10 +477,8 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: _suggestions.length,
-                    separatorBuilder: (_, __) => Divider(
-                      height: 1,
-                      color: Colors.grey[200],
-                    ),
+                    separatorBuilder: (_, __) =>
+                        Divider(height: 1, color: Colors.grey[200]),
                     itemBuilder: (context, index) {
                       final suggestion = _suggestions[index];
                       return ListTile(
@@ -206,9 +490,13 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
                         onTap: () {
                           setState(() {
                             _alumniSchoolController.text = suggestion;
+                            final inst = _findInstitutionByName(suggestion);
+                            _selectedInstitutionId = (inst?['id'] as num?)
+                                ?.toInt();
                             _suggestions.clear();
                             _alumniSchoolError = null;
                           });
+                          _generateStudentId();
                         },
                       );
                     },
@@ -232,7 +520,7 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
             setState(() => _alumniStudentIdError = null);
           },
           decoration: _inputDecoration(
-            hintText: 'Enter your student ID',
+            hintText: 'Enter the code from your school',
           ),
         ),
         if (_alumniStudentIdError != null) ...[
@@ -242,6 +530,22 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
             style: theme.textTheme.bodySmall?.copyWith(color: Colors.red),
           ),
         ],
+        if (_codeError != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            _codeError!,
+            style: theme.textTheme.bodySmall?.copyWith(color: Colors.red),
+          ),
+        ],
+
+        if (_selectedInstitutionName != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Code valid for: $_selectedInstitutionName',
+            style: theme.textTheme.bodySmall?.copyWith(color: Colors.green),
+          ),
+        ],
+
         const SizedBox(height: 10),
         Align(
           alignment: Alignment.centerRight,
@@ -262,10 +566,15 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
 
   void _showRequestIdPopup(BuildContext context) {
     final outerTheme = Theme.of(context);
-    final nameCtrl = TextEditingController();
-    final emailCtrl = TextEditingController();
-    final schoolCtrl =
-        TextEditingController(text: _alumniSchoolController.text);
+    final nameCtrl = TextEditingController(
+      text: _user?['name']?.toString() ?? '',
+    );
+    final emailCtrl = TextEditingController(
+      text: _user?['email']?.toString() ?? '',
+    );
+    final schoolCtrl = TextEditingController(
+      text: _alumniSchoolController.text,
+    );
 
     String? nameError;
     String? emailError;
@@ -292,8 +601,8 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
                   if (emailCtrl.text.trim().isEmpty) {
                     emailError = 'Please enter your email.';
                   } else if (!RegExp(
-                          r'^[\w\.\-]+@([\w\-]+\.)+[\w\-]{2,4}$')
-                      .hasMatch(emailCtrl.text.trim())) {
+                    r'^[\w\.\-]+@([\w\-]+\.)+[\w\-]{2,4}$',
+                  ).hasMatch(emailCtrl.text.trim())) {
                     emailError = 'Please enter a valid email.';
                   }
                   if (schoolCtrl.text.trim().isEmpty) {
@@ -307,16 +616,25 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
                   return;
                 }
 
+                if (_selectedInstitutionId == null) {
+                  setLocalState(
+                    () => schoolError = 'Please select a valid school.',
+                  );
+                  return;
+                }
+
                 // loading dialog
                 showDialog(
                   context: context,
                   barrierDismissible: false,
-                  builder: (_) => const Center(
-                    child: CircularProgressIndicator(),
-                  ),
+                  builder: (_) =>
+                      const Center(child: CircularProgressIndicator()),
                 );
 
-                await Future.delayed(const Duration(seconds: 2));
+                await _requestStudentId(
+                  fullName: nameCtrl.text.trim(),
+                  email: emailCtrl.text.trim(),
+                );
 
                 Navigator.of(context).pop();
                 Navigator.of(ctx).pop();
@@ -324,7 +642,7 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text(
-                      'Request sent. Your school will email you an ID.',
+                      'Request sent. Your school will send your ID to you.',
                     ),
                   ),
                 );
@@ -376,8 +694,11 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
                     ),
                   ),
                 ),
-                actionsPadding:
-                    const EdgeInsets.only(right: 14, bottom: 8, top: 4),
+                actionsPadding: const EdgeInsets.only(
+                  right: 14,
+                  bottom: 8,
+                  top: 4,
+                ),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.of(ctx).pop(),
@@ -396,7 +717,6 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
     );
   }
 
-
   Widget _buildSchoolSection(ThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -408,9 +728,7 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
           onChanged: (_) {
             setState(() => _schoolNameError = null);
           },
-          decoration: _inputDecoration(
-            hintText: 'Enter your school name',
-          ),
+          decoration: _inputDecoration(hintText: 'Enter your school name'),
         ),
         if (_schoolNameError != null) ...[
           const SizedBox(height: 4),
@@ -425,9 +743,7 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
         TextField(
           controller: _schoolIdController,
           readOnly: true,
-          decoration: _inputDecoration(
-            hintText: 'School ID will appear here',
-          ),
+          decoration: _inputDecoration(hintText: 'School ID will appear here'),
         ),
         if (_schoolIdError != null) ...[
           const SizedBox(height: 4),
@@ -447,16 +763,11 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
               final name = _schoolNameController.text.trim();
               if (name.isEmpty) {
                 setState(() {
-                  _schoolNameError =
-                      'Please enter the school name first.';
+                  _schoolNameError = 'Please enter the school name first.';
                 });
                 return;
               }
-              final id = _generateSchoolId(name);
-              setState(() {
-                _schoolIdController.text = id;
-                _schoolIdError = null;
-              });
+              _registerSchool(navigateAfter: false);
             },
             child: Text(
               'Generate school ID',
@@ -480,8 +791,7 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
       filled: true,
       fillColor: Colors.white,
       suffixIcon: suffixIcon,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide(color: Colors.grey[300]!),
@@ -492,10 +802,7 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
       ),
       focusedBorder: const OutlineInputBorder(
         borderRadius: BorderRadius.all(Radius.circular(14)),
-        borderSide: BorderSide(
-          color: Colors.blue,
-          width: 1.4,
-        ),
+        borderSide: BorderSide(color: Colors.blue, width: 1.4),
       ),
     );
   }
@@ -509,8 +816,7 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
     return InputDecoration(
       hintText: hintText,
       isDense: true,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       errorText: errorText,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
@@ -522,10 +828,7 @@ class _RoleDetailsScreenState extends State<RoleDetailsScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(
-          color: theme.colorScheme.primary,
-          width: 1.2,
-        ),
+        borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.2),
       ),
     );
   }

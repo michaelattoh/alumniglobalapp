@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "406893677797",
+    "project_id": "alumniglobal-2c2da",
+    "storage_bucket": "alumniglobal-2c2da.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:406893677797:android:f583a0f569559e016e580c",
+        "android_client_info": {
+          "package_name": "com.alumniglobalnetwork.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDjXxVsNFxJW8mfVEsnQBQtrQmZvcn-4m0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

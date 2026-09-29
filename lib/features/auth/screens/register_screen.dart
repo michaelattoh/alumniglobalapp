@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import './models/user_type.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:alumni_global_app/core/config/api_config.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -22,6 +25,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Color _passwordColor = Colors.grey;
 
   UserType _selectedType = UserType.alumni;
+  bool _loadingInstitutions = false;
+  List<Map<String, dynamic>> _institutions = [];
+  int? _selectedInstitutionId;
+  int? _selectedGraduationYear;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInstitutions();
+  }
 
   @override
   void dispose() {
@@ -43,6 +56,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() {
       _selectedType = type;
     });
+    if (type == UserType.alumni && _institutions.isEmpty) {
+      _loadInstitutions();
+    }
   }
 
   void _onPasswordChanged(String value) {
@@ -94,12 +110,122 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  void _submitCreateAccount() {
-    // TODO: validate + send to backend
-    Navigator.of(context).pushNamed(
-      '/role-details',
-      arguments: _selectedType,
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg)),
     );
+  }
+
+  Future<void> _loadInstitutions() async {
+    setState(() => _loadingInstitutions = true);
+    try {
+      final res = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/institutions/public'),
+        headers: const {'Accept': 'application/json'},
+      );
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        final data = (body['data'] as List?) ?? const [];
+        setState(() {
+          _institutions = data.cast<Map<String, dynamic>>();
+        });
+      }
+    } catch (_) {
+      // Keep existing list on errors.
+    } finally {
+      if (mounted) setState(() => _loadingInstitutions = false);
+    }
+  }
+
+  Future<void> _submitCreateAccount() async {
+    final name = _fullNameController.text.trim();
+    final email = _emailController.text.trim();
+    final phone = _phoneController.text.trim();
+    final password = _passwordController.text;
+    final confirm = _confirmPasswordController.text;
+
+    if (name.isEmpty || email.isEmpty || phone.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill all fields')),
+      );
+      return;
+    }
+
+    if (_selectedType == UserType.alumni &&
+        _institutions.isNotEmpty &&
+        _selectedInstitutionId == null) {
+      _showError('Please select your institution');
+      return;
+    }
+
+    if (_selectedType == UserType.alumni && _selectedGraduationYear == null) {
+      _showError('Please select your year group');
+      return;
+    }
+
+    if (password != confirm) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Passwords do not match')),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final res = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/auth/register'),
+        headers: const {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'name': name,
+          'email': email,
+          'password': password,
+          'password_confirmation': confirm,
+          'phone': phone,
+          'user_type': _selectedType == UserType.alumni ? 'alumni' : 'school',
+          if (_selectedType == UserType.alumni && _selectedInstitutionId != null)
+            'institution_id': _selectedInstitutionId,
+          if (_selectedType == UserType.alumni && _selectedGraduationYear != null)
+            'graduation_year': _selectedGraduationYear,
+        }),
+      );
+
+      if (mounted) Navigator.of(context).pop();
+      final body = jsonDecode(res.body);
+
+      if (res.statusCode == 201 || res.statusCode == 200) {
+        final message = body['message']?.toString() ??
+            'Registration successful. Please verify your email.';
+        if (!mounted) return;
+        if (!mounted) return;
+        Navigator.of(context).pushReplacementNamed(
+          '/check-email',
+          arguments: _emailController.text.trim(),
+        );
+        return;
+      }
+
+      final msg = body['message']?.toString() ?? 'Registration failed';
+      if (body['requires_institution'] == true) {
+        _showError('Please select a valid institution');
+        return;
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Network error: $e')),
+      );
+    }
   }
 
   @override
@@ -164,10 +290,73 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   const SizedBox(height: 6),
                   _buildInputField(
                     controller: _phoneController,
-                    hintText: '+233 24 000 0000',
+                    hintText: '+44 24 000 0000',
                     keyboardType: TextInputType.phone,
                   ),
                   const SizedBox(height: 16),
+
+                  if (_selectedType == UserType.alumni) ...[
+                    Text('Institution', style: theme.textTheme.labelLarge),
+                    const SizedBox(height: 6),
+                    _loadingInstitutions
+                        ? const LinearProgressIndicator(minHeight: 2)
+                        : DropdownButtonFormField<int>(
+                            value: _selectedInstitutionId,
+                            isExpanded: true,
+                            items: _institutions
+                                .map(
+                                  (inst) => DropdownMenuItem<int>(
+                                    value: (inst['id'] as num?)?.toInt(),
+                                    child: Text(
+                                      (inst['name'] ?? 'Institution').toString(),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (value) {
+                              setState(() => _selectedInstitutionId = value);
+                            },
+                            decoration: _inputDecoration(
+                              hintText: _institutions.isEmpty
+                                  ? 'No institutions available yet'
+                                  : 'Select institution',
+                            ),
+                          ),
+                    const SizedBox(height: 16),
+                    Text('Year group', style: theme.textTheme.labelLarge),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<int>(
+                      value: _selectedGraduationYear,
+                      isExpanded: true,
+                      items: List.generate(
+                        DateTime.now().year - 2000 + 1,
+                        (index) => DateTime.now().year - index,
+                      )
+                          .map(
+                            (year) => DropdownMenuItem<int>(
+                              value: year,
+                              child: Text('Class of $year'),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        setState(() => _selectedGraduationYear = value);
+                      },
+                      decoration: _inputDecoration(
+                        hintText: 'Select year group',
+                      ),
+                    ),
+                    if (_institutions.isEmpty)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: _loadInstitutions,
+                          child: const Text('Refresh institutions'),
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+                  ],
 
                   Text('Password', style: theme.textTheme.labelLarge),
                   const SizedBox(height: 6),
@@ -240,7 +429,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         elevation: 0,
                       ),
-                      child: const Text('Create account'),
+                      child: const Text('Next'),
                     ),
                   ),
 

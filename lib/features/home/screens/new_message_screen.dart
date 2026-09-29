@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'package:alumni_global_app/core/services/home_api_service.dart';
 import 'chat_detail_screen.dart';
 
 class NewMessageScreen extends StatefulWidget {
@@ -15,21 +17,40 @@ class NewMessageScreen extends StatefulWidget {
 
 class _NewMessageScreenState extends State<NewMessageScreen> {
   final TextEditingController searchCtrl = TextEditingController();
+  Timer? _debounce;
+  bool _loading = false;
 
-  final List<String> users = [
-    "Daniel Owusu",
-    "Amelia Richardson",
-    "Kwesi Mensah",
-    "Sarah Johnson",
-    "Bright Lamptey",
-  ];
+  List<Map<String, dynamic>> users = [];
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _runSearch(String value) async {
+    final q = value.trim();
+    if (q.isEmpty) {
+      setState(() {
+        users = [];
+        _loading = false;
+      });
+      return;
+    }
+
+    setState(() => _loading = true);
+    final results = await HomeApiService.searchDirectoryUsers(q, perPage: 30);
+    if (!mounted) return;
+    setState(() {
+      users = results;
+      _loading = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final filtered = users
-        .where((u) =>
-            u.toLowerCase().contains(searchCtrl.text.toLowerCase()))
-        .toList();
+    final filtered = users;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -56,7 +77,12 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: TextField(
                 controller: searchCtrl,
-                onChanged: (_) => setState(() {}),
+                onChanged: (value) {
+                  _debounce?.cancel();
+                  _debounce = Timer(const Duration(milliseconds: 300), () {
+                    _runSearch(value);
+                  });
+                },
                 decoration: const InputDecoration(
                   prefixText: 'To: ',
                   hintText: 'Type a name',
@@ -66,30 +92,44 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
             ),
             const Divider(),
             Expanded(
-              child: ListView.builder(
-                physics: const BouncingScrollPhysics(),
-                itemCount: filtered.length,
-                itemBuilder: (_, i) {
-                  final name = filtered[i];
-                  return ListTile(
-                    leading: CircleAvatar(child: Text(name[0])),
-                    title: Text(name),
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChatDetailScreen(
-                            chatId: 'chat_${name.hashCode}',
-                            chatName: name,
-                            isGroup: false,
-                          ),
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : filtered.isEmpty
+                      ? const Center(child: Text('Search people to start a chat'))
+                      : ListView.builder(
+                          physics: const BouncingScrollPhysics(),
+                          itemCount: filtered.length,
+                          itemBuilder: (_, i) {
+                            final row = filtered[i];
+                            final id = (row['id'] as num?)?.toInt();
+                            final name = (row['name'] ?? '').toString();
+                            return ListTile(
+                              leading: CircleAvatar(child: Text(name.isNotEmpty ? name[0] : '')),
+                              title: Text(name),
+                              subtitle: Text(
+                                [
+                                  (row['program'] ?? '').toString(),
+                                  (row['location'] ?? '').toString(),
+                                ].where((e) => e.isNotEmpty).join(' • '),
+                              ),
+                              onTap: id == null
+                                  ? null
+                                  : () {
+                                      Navigator.pop(context);
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => ChatDetailScreen(
+                                            chatId: 'user_$id',
+                                            chatName: name,
+                                            isGroup: false,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                            );
+                          },
                         ),
-                      );
-                    },
-                  );
-                },
-              ),
             ),
           ],
         ),

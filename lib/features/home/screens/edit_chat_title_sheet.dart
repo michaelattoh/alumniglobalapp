@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:alumni_global_app/core/services/home_api_service.dart';
 
 class EditChatTitleSheet extends StatefulWidget {
   final String initialTitle;
+  final int groupId;
 
   const EditChatTitleSheet({
     super.key,
     required this.initialTitle,
+    required this.groupId,
   });
 
   @override
@@ -23,12 +26,33 @@ class _EditChatTitleSheetState extends State<EditChatTitleSheet> {
   }
 
   Future<void> _save() async {
+    final nextTitle = controller.text.trim();
+    if (nextTitle.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Title is required')),
+      );
+      return;
+    }
+
     setState(() => saving = true);
-    await Future.delayed(const Duration(seconds: 1));
+    final updated = await HomeApiService.updateGroupChat(
+      groupId: widget.groupId,
+      name: nextTitle,
+    );
 
     if (!mounted) return;
 
     setState(() => saving = false);
+
+    if (updated == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to update chat title'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -37,7 +61,7 @@ class _EditChatTitleSheetState extends State<EditChatTitleSheet> {
       ),
     );
 
-    Navigator.pop(context);
+    Navigator.pop(context, nextTitle);
   }
 
   @override

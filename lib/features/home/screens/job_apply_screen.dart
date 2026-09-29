@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'cv_preview_screen.dart';
+import 'package:alumni_global_app/core/services/home_api_service.dart';
 
 class JobApplyScreen extends StatefulWidget {
   final String jobId;
@@ -29,6 +30,27 @@ class _JobApplyScreenState extends State<JobApplyScreen> {
 
   File? cvFile;
   bool submitting = false;
+  bool _prefilling = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _prefillUser();
+  }
+
+  Future<void> _prefillUser() async {
+    try {
+      final me = await HomeApiService.fetchMe();
+      if (!mounted) return;
+      nameCtrl.text = (me?['name'] ?? '').toString();
+      emailCtrl.text = (me?['email'] ?? '').toString();
+      phoneCtrl.text = (me?['phone'] ?? '').toString();
+    } catch (_) {
+      // ignore prefill errors
+    } finally {
+      if (mounted) setState(() => _prefilling = false);
+    }
+  }
 
   Future<void> _pickCV() async {
     final result = await FilePicker.platform.pickFiles(
@@ -50,8 +72,31 @@ class _JobApplyScreenState extends State<JobApplyScreen> {
     }
 
     setState(() => submitting = true);
-    await Future.delayed(const Duration(seconds: 2));
+    final upload = await HomeApiService.uploadMedia(
+      filePath: cvFile!.path,
+      fileName: cvFile!.path.split('/').last,
+    );
+    if (upload == null || upload['url'] == null) {
+      setState(() => submitting = false);
+      _showMessage('Resume upload failed', isError: true);
+      return;
+    }
+
+    final ok = await HomeApiService.applyToJob(
+      jobId: int.tryParse(widget.jobId) ?? 0,
+      name: nameCtrl.text.trim(),
+      email: emailCtrl.text.trim(),
+      phone: phoneCtrl.text.trim(),
+      linkedinUrl: linkedinCtrl.text.trim(),
+      resumeUrl: upload['url'].toString(),
+    );
+
     setState(() => submitting = false);
+
+    if (!ok) {
+      _showMessage('Application failed. Please try again.', isError: true);
+      return;
+    }
 
     _showMessage('Application submitted successfully');
     Navigator.pop(context);
@@ -79,12 +124,25 @@ class _JobApplyScreenState extends State<JobApplyScreen> {
           key: _formKey,
           child: Column(
             children: [
+              if (_prefilling)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: LinearProgressIndicator(minHeight: 2),
+                ),
               _input(nameCtrl, 'Full name'),
               _input(emailCtrl, 'Email',
                   keyboard: TextInputType.emailAddress),
-              _input(phoneCtrl, 'Phone number',
-                  keyboard: TextInputType.phone),
-              _input(linkedinCtrl, 'LinkedIn profile (optional)'),
+              _input(
+                phoneCtrl,
+                'Phone number',
+                keyboard: TextInputType.phone,
+                hint: '+233 20 000 0000',
+              ),
+              _input(
+                linkedinCtrl,
+                'LinkedIn profile (optional)',
+                required: false,
+              ),
 
               const SizedBox(height: 16),
 
@@ -150,17 +208,24 @@ class _JobApplyScreenState extends State<JobApplyScreen> {
     );
   }
 
-  Widget _input(TextEditingController ctrl, String label,
-      {TextInputType? keyboard}) {
+  Widget _input(
+    TextEditingController ctrl,
+    String label, {
+    TextInputType? keyboard,
+    bool required = true,
+    String? hint,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: TextFormField(
         controller: ctrl,
         keyboardType: keyboard,
-        validator: (v) =>
-            v == null || v.isEmpty ? 'Required' : null,
+        validator: required
+            ? (v) => v == null || v.isEmpty ? 'Required' : null
+            : null,
         decoration: InputDecoration(
           labelText: label,
+          hintText: hint,
           filled: true,
           fillColor: Colors.white,
           border: OutlineInputBorder(

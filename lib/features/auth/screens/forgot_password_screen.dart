@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:alumni_global_app/core/services/home_api_service.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -10,6 +11,7 @@ class ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final TextEditingController _emailController = TextEditingController();
   String? _emailError;
+  bool _submitting = false;
 
   @override
   void dispose() {
@@ -17,36 +19,48 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     setState(() {
       _emailError = null;
       final email = _emailController.text.trim();
       if (email.isEmpty) {
         _emailError = 'Please enter your email.';
-      } else if (!RegExp(r'^[\w\.\-]+@([\w\-]+\.)+[\w\-]{2,4}$')
-          .hasMatch(email)) {
+      } else if (!RegExp(
+        r'^[\w\.\-]+@([\w\-]+\.)+[\w\-]{2,4}$',
+      ).hasMatch(email)) {
         _emailError = 'Please enter a valid email.';
       }
     });
 
     if (_emailError != null) return;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-
-    Future.delayed(const Duration(seconds: 2), () {
-      Navigator.of(context).pop(); // close loading
+    setState(() => _submitting = true);
+    try {
+      final ok = await HomeApiService.forgotPassword(
+        _emailController.text.trim(),
+      );
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('If this email exists, a reset link has been sent.'),
+        SnackBar(
+          content: Text(
+            ok
+                ? 'If this email exists, a reset link has been sent.'
+                : 'Unable to send reset link right now.',
+          ),
         ),
       );
-      Navigator.of(context).pop(); // go back to login
-    });
+      if (ok) {
+        Navigator.of(context).pop();
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to send reset link right now.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
   }
 
   @override
@@ -88,10 +102,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  Text(
-                    'Email',
-                    style: theme.textTheme.labelLarge,
-                  ),
+                  Text('Email', style: theme.textTheme.labelLarge),
                   const SizedBox(height: 6),
                   TextField(
                     controller: _emailController,
@@ -129,7 +140,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: _submit,
+                      onPressed: _submitting ? null : _submit,
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
@@ -137,7 +148,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         ),
                         elevation: 0,
                       ),
-                      child: const Text('Send reset link'),
+                      child: _submitting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Send reset link'),
                     ),
                   ),
                 ],
