@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>API_KEY</key>
+	<string>AIzaSyDuloV-sW4aiAgODD5H9L0vZw4Rx_OtBqQ</string>
+	<key>GCM_SENDER_ID</key>
+	<string>406893677797</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.verixteams.alumniGlobalApp</string>
+	<key>PROJECT_ID</key>
+	<string>alumniglobal-2c2da</string>
+	<key>STORAGE_BUCKET</key>
+	<string>alumniglobal-2c2da.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:406893677797:ios:d5ee4a8587b7fa1b6e580c</string>
+</dict>
+</plist>
